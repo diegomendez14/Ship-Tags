@@ -23,7 +23,7 @@ import requests
 
 TAG_NAME = "extended residence"
 ORDER_STATUS = "awaiting_shipment"
-ZIP_FILE = Path(__file__).resolve().parent.parent / "data" / "fedex_das_extended_zips.txt"
+ZIP_FILE = Path(__file__).resolve().parent / "fedex" / "fedex_das_extended_zips.txt". Click Commit changes. (Or delete the old file and upload the updated one from this chat.)
 API_BASE = "https://ssapi.shipstation.com"
 
 session = requests.Session()
