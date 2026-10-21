@@ -1,18 +1,15 @@
 """
 Tag ShipStation orders whose ship-to ZIP is in zips.txt.
 
-Setup:
-  pip install requests
-  export SHIPSTATION_KEY="your_v1_api_key"
-  export SHIPSTATION_SECRET="your_v1_api_secret"
+Environment variables:
+  SHIPSTATION_KEY, SHIPSTATION_SECRET  (V1 API key and secret)
+  TAG_NAME                             (name of the tag in ShipStation)
 
 Usage:
-  python tag_orders.py --tag-name "Special ZIP"            # dry run (default)
-  python tag_orders.py --tag-name "Special ZIP" --apply    # actually tags orders
-Optional: --  "orderStatus": a.status, "modifyDateStart": since,
+  python tag_orders.py            # dry run (default)
+  python tag_orders.py --apply    # actually tags orders
 """
 import argparse, os, re, sys, time
-from datetime import datetime, timedelta, timezone
 import requests
 
 BASE = "https://ssapi.shipstation.com"
@@ -52,7 +49,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag-name", default=os.environ.get("TAG_NAME"))
     ap.add_argument("--status", default="awaiting_shipment")
-    ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--zips", default="zips.txt")
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args()
@@ -61,13 +57,12 @@ def main():
 
     zips = load_zips(a.zips)
     tag_id = get_tag_id(a.tag_name)
-    since = (datetime.now(timezone.utc) - timedelta(days=a.days)).strftime("%Y-%m-%d %H:%M:%S")
     print(f"{len(zips)} ZIPs loaded, tag id {tag_id}, mode: {'APPLY' if a.apply else 'DRY RUN'}")
 
     page, seen, matched, tagged = 1, 0, 0, 0
     while True:
         data = call("GET", "/orders", params={
-            "orderStatus": a.status, "createDateStart": since,
+            "orderStatus": a.status,
             "page": page, "pageSize": 500})
         for o in data.get("orders", []):
             seen += 1
