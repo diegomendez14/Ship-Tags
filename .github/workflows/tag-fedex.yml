@@ -1,1 +1,36 @@
+name: Tag FedEx extended residence
 
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Actually tag orders? (false = dry run)"
+        default: "false"
+
+concurrency:
+  group: tag-orders          # same group as Sway, so they never run at the same time
+  cancel-in-progress: false
+
+jobs:
+  tag-fedex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run FedEx extended residence tagger
+        env:
+          SHIPSTATION_API_KEY: ${{ secrets.SHIPSTATION_KEY }}
+          SHIPSTATION_API_SECRET: ${{ secrets.SHIPSTATION_SECRET }}
+          APPLY: ${{ github.event_name == 'schedule' && 'true' || inputs.apply }}
+        run: |
+          if [ "$APPLY" = "true" ]; then
+            python tag_fedex_extended.py --apply
+          else
+            python tag_fedex_extended.py
+          fi
