@@ -1,6 +1,11 @@
 """
-Add the "extended residence" tag to ShipStation orders whose ship-to ZIP
-is on FedEx's Contiguous U.S.: Extended delivery area surcharge list.
+Tag ShipStation orders by FedEx Delivery Area Surcharge (DAS) ZIP lists.
+
+  - ZIPs on the FedEx "Contiguous U.S." DAS list       -> tag "DAS FedEx"
+  - ZIPs on the FedEx "Contiguous U.S.: Extended" list -> tag "extended residence"
+
+Each tag must already exist in ShipStation with exactly that name.
+To rename a tag, change it in the TAGS section below.
 
 Run:
     python tag_fedex_extended.py           # dry run: only shows what it would tag
@@ -13,9 +18,15 @@ from pathlib import Path
 
 import requests
 
-TAG_NAME = "extended residence"
+FEDEX_DIR = Path(__file__).resolve().parent / "fedex"
+
+# Tag name in ShipStation  ->  ZIP list file in the fedex folder
+TAGS = {
+    "DAS FedEx": "fedex_das_contiguous_zips.txt",
+    "extended residence": "fedex_das_extended_zips.txt",
+}
+
 ORDER_STATUS = "awaiting_shipment"
-ZIP_FILE = Path(__file__).resolve().parent / "fedex" / "fedex_das_extended_zips.txt"
 API_BASE = "https://ssapi.shipstation.com"
 
 session = requests.Session()
@@ -35,10 +46,21 @@ def api(method, path, **kwargs):
         return resp.json() if resp.content else None
 
 
-def load_zips():
-    if not ZIP_FILE.exists():
-        sys.exit(f"Missing {ZIP_FILE}. Upload the fedex folder with the ZIP lists.")
-    return {line.strip() for line in ZIP_FILE.read_text().splitlines() if line.strip()}
+def load_zip_to_tag():
+    """Build one lookup: ZIP -> tag name. Stops if a ZIP is on two lists."""
+    zip_to_tag = {}
+    for tag_name, filename in TAGS.items():
+        path = FEDEX_DIR / filename
+        if not path.exists():
+            sys.exit(f"Missing {path}. Upload it to the fedex folder.")
+        for line in path.read_text().splitlines():
+            z = line.strip()
+            if not z:
+                continue
+            if z in zip_to_tag and zip_to_tag[z] != tag_name:
+                sys.exit(f"ZIP {z} is on both the '{zip_to_tag[z]}' and '{tag_name}' lists.")
+            zip_to_tag[z] = tag_name
+    return zip_to_tag
 
 
 def normalize_zip(postal_code):
@@ -47,11 +69,13 @@ def normalize_zip(postal_code):
     return digits.zfill(5) if digits.isdigit() else ""
 
 
-def find_tag_id():
-    for tag in api("GET", "/accounts/listtags"):
-        if tag["name"].strip().lower() == TAG_NAME.lower():
-            return tag["tagId"]
-    sys.exit(f'Tag "{TAG_NAME}" not found. Create it in ShipStation first.')
+def find_tag_ids():
+    existing = {t["name"].strip().lower(): t["tagId"] for t in api("GET", "/accounts/listtags")}
+    missing = [name for name in TAGS if name.lower() not in existing]
+    if missing:
+        sys.exit("Tag(s) not found in ShipStation: " + ", ".join(f'"{m}"' for m in missing)
+                 + ". Create them first.")
+    return {name: existing[name.lower()] for name in TAGS}
 
 
 def iter_orders():
@@ -71,26 +95,34 @@ def main():
     apply = "--apply" in sys.argv
     print("Mode:", "APPLY (tagging orders)" if apply else "DRY RUN (no changes)")
 
-    extended_zips = load_zips()
-    tag_id = find_tag_id()
-    checked = tagged = already = 0
+    zip_to_tag = load_zip_to_tag()
+    tag_ids = find_tag_ids()
+    checked = 0
+    tagged = {name: 0 for name in TAGS}
+    already = {name: 0 for name in TAGS}
 
     for order in iter_orders():
         checked += 1
         ship_to = order.get("shipTo") or {}
         if (ship_to.get("country") or "US") != "US":
             continue
-        if normalize_zip(ship_to.get("postalCode")) not in extended_zips:
+        tag_name = zip_to_tag.get(normalize_zip(ship_to.get("postalCode")))
+        if not tag_name:
             continue
+        tag_id = tag_ids[tag_name]
         if tag_id in (order.get("tagIds") or []):
-            already += 1
+            already[tag_name] += 1
             continue
         if apply:
             api("POST", "/orders/addtag", json={"orderId": order["orderId"], "tagId": tag_id})
-        tagged += 1
-        print(f"{'Tagged' if apply else 'Would tag'} order {order['orderNumber']} (ZIP {ship_to.get('postalCode')})")
+        tagged[tag_name] += 1
+        print(f"{'Tagged' if apply else 'Would tag'} order {order['orderNumber']} "
+              f"(ZIP {ship_to.get('postalCode')}) -> {tag_name}")
 
-    print(f"\nChecked {checked} orders: {tagged} {'newly tagged' if apply else 'would be tagged'}, {already} already had the tag.")
+    print(f"\nChecked {checked} orders.")
+    for name in TAGS:
+        verb = "newly tagged" if apply else "would be tagged"
+        print(f"  {name}: {tagged[name]} {verb}, {already[name]} already had the tag")
 
 
 if __name__ == "__main__":
