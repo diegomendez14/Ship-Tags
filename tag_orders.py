@@ -9,7 +9,7 @@ Setup:
 Usage:
   python tag_orders.py --tag-name "Special ZIP"            # dry run (default)
   python tag_orders.py --tag-name "Special ZIP" --apply    # actually tags orders
-Optional: --status awaiting_shipment  --days 30
+Optional: --  "orderStatus": a.status, "modifyDateStart": since,
 """
 import argparse, os, re, sys, time
 from datetime import datetime, timedelta, timezone
