@@ -26,7 +26,9 @@ TAGS = {
     "extended residence": "fedex_das_extended_zips.txt",
 }
 
-ORDER_STATUS = "awaiting_shipment"
+# Order statuses to check. On-hold orders get tagged early, so the tag is
+# already there when they move to Awaiting Shipment.
+ORDER_STATUSES = ["awaiting_shipment", "on_hold"]
 API_BASE = "https://ssapi.shipstation.com"
 
 session = requests.Session()
@@ -79,13 +81,14 @@ def find_tag_ids():
 
 
 def iter_orders():
-    page = 1
-    while True:
-        data = api("GET", "/orders", params={"orderStatus": ORDER_STATUS, "page": page, "pageSize": 500})
-        yield from data["orders"]
-        if page >= data["pages"]:
-            break
-        page += 1
+    for status in ORDER_STATUSES:
+        page = 1
+        while True:
+            data = api("GET", "/orders", params={"orderStatus": status, "page": page, "pageSize": 500})
+            yield from data["orders"]
+            if page >= data["pages"]:
+                break
+            page += 1
 
 
 def main():
